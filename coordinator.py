@@ -4,6 +4,7 @@ Python 3 + Tkinter + pandas + openpyxl.
 """
 
 import tkinter as tk
+import math
 from tkinter import ttk, messagebox, filedialog
 import pandas as pd
 from typing import Dict, List, Optional
@@ -37,6 +38,12 @@ class CoordinatorApp:
         # stockage des fenêtres décideurs
         self.decision_windows = {}
 
+        # Pie chart for the decision-makers weights
+        self._weights_pie_colors = ["#4F81BD", "#C0504D", "#9BBB59", "#8064A2"]
+        self._weights_pie_diameter = 120
+        self._weights_pie_padding = 10
+        self.weights_pie_canvas = None
+
         self._build_ui()
 
 
@@ -46,8 +53,17 @@ class CoordinatorApp:
         main = ttk.Frame(self.root, padding=10)
         main.pack(fill=tk.BOTH, expand=True)
 
+        # Split layout (Parameters left, matrix right) like the reference UI
+        paned = ttk.PanedWindow(main, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+        left_panel = ttk.Frame(paned)
+        right_panel = ttk.Frame(paned)
+        paned.add(left_panel, weight=1)
+        paned.add(right_panel, weight=3)
+
         # --- Frame 1: Parameters ---
-        params_frame = ttk.LabelFrame(main, text="Parameters", padding=8)
+        params_frame = ttk.LabelFrame(left_panel, text="Parameters", padding=8)
         params_frame.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(params_frame, text="Introduce the weight of decision-makers.").pack(anchor="w", pady=(0, 4))
@@ -59,10 +75,21 @@ class CoordinatorApp:
         self.weights_frame.pack(fill=tk.X, pady=(8, 0))
         self.weights_status_label = ttk.Label(params_frame, text="Total weight : 0%")
         self.weights_status_label.pack(anchor="w", pady=(4, 0))
+
+        # Circle chart below the weights inputs
+        self.weights_pie_canvas = tk.Canvas(
+            params_frame,
+            width=self._weights_pie_diameter,
+            height=self._weights_pie_diameter,
+            highlightthickness=0,
+            bg="white",
+        )
+        self.weights_pie_canvas.pack(pady=(8, 4))
+
         self._rebuild_weight_fields()
 
         # --- Frame 2: Matrix (Excel-like grid) ---
-        matrix_frame = ttk.LabelFrame(main, text="Performance matrix", padding=8)
+        matrix_frame = ttk.LabelFrame(right_panel, text="Performance matrix", padding=8)
         matrix_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
         # Bordered container like Excel
         table_border = tk.Frame(matrix_frame, bg="gray65", padx=2, pady=2)
@@ -128,6 +155,7 @@ class CoordinatorApp:
             sb.pack(side=tk.LEFT)
             self.weights[i] = self._parse_weight(var.get())
         self._check_weights_sum()
+        self._update_weights_pie_chart()
 
     def _on_weight_edited(self, idx: int, var: tk.StringVar):
         try:
@@ -135,6 +163,71 @@ class CoordinatorApp:
         except (ValueError, TypeError):
             pass
         self._check_weights_sum()
+        self._update_weights_pie_chart()
+
+    def _update_weights_pie_chart(self) -> None:
+        """Draw the weights as a pie chart."""
+        if self.weights_pie_canvas is None:
+            return
+
+        canvas = self.weights_pie_canvas
+        canvas.delete("all")
+
+        total = sum(self.weights) if self.weights else 0.0
+
+        x0 = self._weights_pie_padding
+        y0 = self._weights_pie_padding
+        x1 = self._weights_pie_diameter - self._weights_pie_padding
+        y1 = self._weights_pie_diameter - self._weights_pie_padding
+
+        # background circle
+        canvas.create_oval(x0, y0, x1, y1, fill="#E6E6E6", outline="#BFBFBF", width=1)
+        if total <= 0.0:
+            return
+
+        cx = (x0 + x1) / 2.0
+        cy = (y0 + y1) / 2.0
+        radius = (x1 - x0) / 2.0
+
+        start_angle = 90.0  # start at top
+        for i, w in enumerate(self.weights):
+            if w <= 0.0:
+                continue
+
+            extent = - (w / total) * 360.0
+            color = self._weights_pie_colors[i % len(self._weights_pie_colors)]
+
+            # Slice arc
+            canvas.create_arc(
+                x0, y0, x1, y1,
+                start=start_angle,
+                extent=extent,
+                fill=color,
+                outline="white",
+                width=2,
+            )
+
+            # Place the decision-maker name inside the slice
+            mid_angle = start_angle + extent / 2.0
+            theta = math.radians(mid_angle)
+            label_radius = radius * 0.65
+            tx = cx + label_radius * math.cos(theta)
+            ty = cy - label_radius * math.sin(theta)  # canvas y grows down
+
+            label_text = self.decision_maker_names[i]
+            if len(label_text) > 14 and " " in label_text:
+                first, rest = label_text.split(" ", 1)
+                label_text = f"{first}\n{rest}"
+
+            canvas.create_text(
+                tx, ty,
+                text=label_text,
+                fill="white",
+                font=("Segoe UI", 8, "bold"),
+                anchor="center",
+            )
+
+            start_angle += extent
 
     def _parse_weight(self, s: str) -> float:
         s = (s or "0").strip().replace(",", ".")
