@@ -20,6 +20,7 @@ class CoordinatorApp:
         self.root = tk.Tk()
         self.root.title("DSS - Interface Coordinateur")
         self.root.minsize(500, 400)
+        self.root.configure(bg="#F5F7FA")
 
         # Data model (prepared for future decision maker integration)
         self.matrix: Optional[pd.DataFrame] = None
@@ -92,7 +93,7 @@ class CoordinatorApp:
         matrix_frame = ttk.LabelFrame(right_panel, text="Performance matrix", padding=8)
         matrix_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
         # Bordered container like Excel
-        table_border = tk.Frame(matrix_frame, bg="gray65", padx=2, pady=2)
+        table_border = tk.Frame(matrix_frame, bg="#D6DCE5", padx=1, pady=1)
         table_border.pack(fill=tk.BOTH, expand=True)
         tree_container = ttk.Frame(table_border)
         tree_container.pack(fill=tk.BOTH, expand=True)

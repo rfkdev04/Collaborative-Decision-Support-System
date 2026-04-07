@@ -25,6 +25,7 @@ class DecisionMakerWindow:
         self.weight = weight
 
         self.window = tk.Toplevel(root)
+        self.window.configure(bg="#F5F7FA")
         self.window.title(f"Decision maker : {name}")
         self.window.minsize(400, 300)
         apply_excel_style()
@@ -42,7 +43,11 @@ class DecisionMakerWindow:
         main = ttk.Frame(self.window, padding=10)
         main.pack(fill=tk.BOTH, expand=True)
 
-        self.weight_label = ttk.Label(main, text=f"Weight : {weight:.1f} %")
+        self.weight_label = ttk.Label(
+            main,
+            text=f"Weight : {weight:.1f} %",
+            font=("Segoe UI", 10)
+        )
         self.weight_label.pack(anchor="w", pady=(0, 5))
 
         table_border = tk.Frame(main, bg="gray65", padx=2, pady=2)
@@ -177,6 +182,7 @@ class DecisionMakerWindow:
 
         root = self.window.master
         self.pref_window = tk.Toplevel(root)
+        self.pref_window.configure(bg="#F5F7FA")
         self.pref_window.title(f"Preferences - {self.name}")
         self.pref_window.geometry("700x450")
 
@@ -195,7 +201,7 @@ class DecisionMakerWindow:
         frame = ttk.LabelFrame(self.pref_window, text="Preferences matrix", padding=8)
         frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-        table_border = tk.Frame(frame, bg="gray65", padx=2, pady=2)
+        table_border = tk.Frame(frame, bg="#D6DCE5", padx=1, pady=1)
         table_border.pack(fill=tk.BOTH, expand=True)
 
         pref_container = ttk.Frame(table_border)
@@ -206,6 +212,11 @@ class DecisionMakerWindow:
             columns=("Critère", "Poids", "Q", "P", "V"),
             show="headings"
         )
+
+        for col in ("Critère", "Poids", "Q", "P", "V"):
+            self.pref_tree.column(col, width=120)
+
+
 
         self.pref_tree.pack(fill=tk.BOTH, expand=True)
 
@@ -238,10 +249,56 @@ class DecisionMakerWindow:
             self.pref_tree.item(item, values=(values[0], "", "", "", ""))
 
     def _pref_open(self):
-        pass
+        path = filedialog.askopenfilename(
+            filetypes=[("Excel files (*.xlsx)", "*.xlsx")],
+            defaultextension=".xlsx",
+            parent=self.pref_window
+        )
+        if not path:
+            return
+
+        try:
+            df = pd.read_excel(path)
+
+            for i, item in enumerate(self.pref_tree.get_children()):
+                if i < len(df):
+                    row = df.iloc[i]
+                    values = (
+                        row.get("Critère", ""),
+                        row.get("Poids", ""),
+                        row.get("Q", ""),
+                        row.get("P", ""),
+                        row.get("V", "")
+                    )
+                    self.pref_tree.item(item, values=values)
+
+            messagebox.showinfo("Open", "Preferences loaded.", parent=self.pref_window)
+
+        except Exception as exc:
+            messagebox.showerror("Error", f"Cannot open file.\n{exc}", parent=self.pref_window)
 
     def _pref_save_file(self):
-        pass
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel", "*.xlsx")],
+            parent=self.pref_window
+        )
+        if not path:
+            return
+
+        try:
+            data = []
+            for item in self.pref_tree.get_children():
+                values = self.pref_tree.item(item)["values"]
+                data.append(values)
+
+            df = pd.DataFrame(data, columns=["Critère", "Poids", "Q", "P", "V"])
+            df.to_excel(path, index=False)
+
+            messagebox.showinfo("Save", "Preferences saved.", parent=self.pref_window)
+
+        except Exception as exc:
+            messagebox.showerror("Error", f"Cannot save.\n{exc}", parent=self.pref_window)
 
     def edit_cell(self, event):
         item = self.pref_tree.identify_row(event.y)
