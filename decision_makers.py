@@ -15,7 +15,7 @@ from table_style import apply_excel_style
 class DecisionMakerWindow:
     """Window for one decision maker: matrix display, weight, preferences table."""
 
-    def __init__(self, root, name: str, weight: float = 0.0):
+    def __init__(self, root, name: str, weight: float = 0.0, mode: str = "dark"):
         self.criteria = [
             "Nuisances", "Bruit", "Impacts", "Géotechnique",
             "Equipements", "Accessibilité", "Climat"
@@ -23,12 +23,14 @@ class DecisionMakerWindow:
         self.name = name
         self.matrix = None
         self.weight = weight
+        self.current_mode = mode
+        self.palette = apply_excel_style(self.current_mode)
 
         self.window = tk.Toplevel(root)
-        self.window.configure(bg="#F5F7FA")
+        self.window.configure(bg=self.palette["bg"])
         self.window.title(f"Decision maker : {name}")
-        self.window.minsize(400, 300)
-        apply_excel_style()
+        self.window.geometry("980x620")
+        self.window.minsize(760, 500)
 
         menubar = tk.Menu(self.window)
         self.window.config(menu=menubar)
@@ -40,31 +42,79 @@ class DecisionMakerWindow:
         self.dm_file_menu.add_separator()
         self.dm_file_menu.add_command(label="Exit", command=self.window.destroy)
 
-        main = ttk.Frame(self.window, padding=10)
-        main.pack(fill=tk.BOTH, expand=True)
+        shell = ttk.Frame(self.window, padding=10, style="App.TFrame")
+        shell.pack(fill=tk.BOTH, expand=True)
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(1, weight=1)
 
-        self.weight_label = ttk.Label(
-            main,
-            text=f"Weight : {weight:.1f} %",
-            font=("Segoe UI", 10)
-        )
-        self.weight_label.pack(anchor="w", pady=(0, 5))
+        header = ttk.Frame(shell, style="HeroCompact.TFrame", padding=(14, 10))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        header.columnconfigure(0, weight=1)
 
-        table_border = tk.Frame(main, bg="gray65", padx=2, pady=2)
-        table_border.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(header, text=f"Decision maker — {name}", style="HeroCompactTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            header,
+            text="Review the matrix, check your assigned weight, and manage your preferences.",
+            style="HeroCompactSubtitle.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
 
-        tree_container = ttk.Frame(table_border)
-        tree_container.pack(fill=tk.BOTH, expand=True)
+        self.mode_button = ttk.Button(header, text="Mode clair", style="Secondary.TButton", command=self._toggle_mode)
+        self.mode_button.grid(row=0, column=1, rowspan=2, sticky="e")
 
-        self.tree = ttk.Treeview(tree_container, show="headings", selectmode="browse")
-        self.tree.pack(fill=tk.BOTH, expand=True)
-        self.tree.bind("<Double-1>", self._dm_on_cell_double_click)
+        main = ttk.Frame(shell, style="Card.TFrame", padding=10)
+        main.grid(row=1, column=0, sticky="nsew")
+        main.columnconfigure(0, weight=1)
+        main.rowconfigure(1, weight=1)
+
+        topbar = ttk.Frame(main, style="CardInner.TFrame")
+        topbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        topbar.columnconfigure(0, weight=1)
+
+        left_info = ttk.Frame(topbar, style="CardInner.TFrame")
+        left_info.grid(row=0, column=0, sticky="w")
+        ttk.Label(left_info, text="Assigned weight", style="MutedCapsCompact.TLabel").pack(anchor="w")
+        self.weight_label = ttk.Label(left_info, text=f"Weight : {weight:.1f} %", style="MetricCompact.TLabel")
+        self.weight_label.pack(anchor="w", pady=(1, 0))
 
         self.pref_button = ttk.Button(
-            main, text="Introduce Preferences",
-            state=tk.DISABLED, command=self._add_preferences
+            topbar,
+            text="Introduce Preferences",
+            state=tk.DISABLED,
+            command=self._add_preferences,
+            style="Accent.TButton",
         )
-        self.pref_button.pack(pady=5)
+        self.pref_button.grid(row=0, column=1, sticky="e")
+
+        self.table_border = tk.Frame(main, bg=self.palette["border"], padx=1, pady=1)
+        self.table_border.grid(row=1, column=0, sticky="nsew")
+
+        tree_container = ttk.Frame(self.table_border, style="TableWrap.TFrame")
+        tree_container.pack(fill=tk.BOTH, expand=True)
+        tree_container.columnconfigure(0, weight=1)
+        tree_container.rowconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(tree_container, show="headings", selectmode="browse")
+        vsb = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=self.tree.yview)
+        hsb = ttk.Scrollbar(tree_container, orient=tk.HORIZONTAL, command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        self.tree.bind("<Double-1>", self._dm_on_cell_double_click)
+
+    def _toggle_mode(self):
+        self.apply_mode("light" if self.current_mode == "dark" else "dark")
+
+    def apply_mode(self, mode: str):
+        self.current_mode = mode
+        self.palette = apply_excel_style(self.current_mode)
+        self.window.configure(bg=self.palette["bg"])
+        self.table_border.configure(bg=self.palette["border"])
+        if hasattr(self, "pref_window") and self.pref_window.winfo_exists():
+            self.pref_window.configure(bg=self.palette["bg"])
+            if hasattr(self, "pref_table_border"):
+                self.pref_table_border.configure(bg=self.palette["border"])
+        self.mode_button.configure(text="Mode clair" if self.current_mode == "dark" else "Mode sombre")
 
     def _dm_file_new(self):
         config = self._dm_configure_new_matrix()
@@ -114,15 +164,17 @@ class DecisionMakerWindow:
         dialog.title("New matrix")
         dialog.transient(self.window)
         dialog.grab_set()
+        dialog.configure(bg=self.palette["bg"])
+        apply_excel_style(self.current_mode)
 
-        frm = ttk.Frame(dialog, padding=10)
+        frm = ttk.Frame(dialog, padding=12, style="Dialog.TFrame")
         frm.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(frm, text="Number of alternatives :").grid(row=0, column=0, sticky="w")
+        ttk.Label(frm, text="Number of alternatives :", style="DialogLabel.TLabel").grid(row=0, column=0, sticky="w")
         alt_var = tk.IntVar(value=DEFAULT_ALTERNATIVES)
         tk.Spinbox(frm, from_=1, to=100, textvariable=alt_var, width=5).grid(row=0, column=1)
 
-        ttk.Label(frm, text="Number of criteria :").grid(row=1, column=0, sticky="w")
+        ttk.Label(frm, text="Number of criteria :", style="DialogLabel.TLabel").grid(row=1, column=0, sticky="w")
         crit_var = tk.IntVar(value=DEFAULT_CRITERIA)
         tk.Spinbox(frm, from_=1, to=50, textvariable=crit_var, width=5).grid(row=1, column=1)
 
@@ -136,7 +188,7 @@ class DecisionMakerWindow:
             )
             dialog.destroy()
 
-        ttk.Button(frm, text="OK", command=on_ok).grid(row=3, column=1)
+        ttk.Button(frm, text="OK", command=on_ok, style="Accent.TButton").grid(row=3, column=1, pady=(10, 0), sticky="e")
         self.window.wait_window(dialog)
         return result["value"]
 
@@ -151,9 +203,11 @@ class DecisionMakerWindow:
         cols = list(self.matrix.columns)
         self.tree["columns"] = ["_index"] + cols
         self.tree.heading("_index", text="Alternative")
+        self.tree.column("_index", width=150)
 
         for col in cols:
             self.tree.heading(col, text=str(col))
+            self.tree.column(col, width=110)
 
         for idx in self.matrix.index:
             row = [str(idx)] + [self.matrix.loc[idx, c] for c in cols]
@@ -179,12 +233,13 @@ class DecisionMakerWindow:
             self.weight_label.configure(text=f"Weight : {weight:.1f} %")
 
     def _add_preferences(self):
-
         root = self.window.master
         self.pref_window = tk.Toplevel(root)
-        self.pref_window.configure(bg="#F5F7FA")
+        self.pref_window.configure(bg=self.palette["bg"])
         self.pref_window.title(f"Preferences - {self.name}")
-        self.pref_window.geometry("700x450")
+        self.pref_window.geometry("980x620")
+        self.pref_window.minsize(760, 500)
+        apply_excel_style(self.current_mode)
 
         menubar = tk.Menu(self.pref_window)
         self.pref_window.config(menu=menubar)
@@ -198,27 +253,44 @@ class DecisionMakerWindow:
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.pref_window.destroy)
 
-        frame = ttk.LabelFrame(self.pref_window, text="Preferences matrix", padding=8)
-        frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        shell = ttk.Frame(self.pref_window, padding=10, style="App.TFrame")
+        shell.pack(fill=tk.BOTH, expand=True)
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(1, weight=1)
 
-        table_border = tk.Frame(frame, bg="#D6DCE5", padx=1, pady=1)
-        table_border.pack(fill=tk.BOTH, expand=True)
+        header = ttk.Frame(shell, style="HeroCompact.TFrame", padding=(14, 10))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        ttk.Label(header, text=f"Preferences — {self.name}", style="HeroCompactTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(header, text="Set weights and thresholds in a compact editable grid.", style="HeroCompactSubtitle.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 0))
 
-        pref_container = ttk.Frame(table_border)
+        frame = ttk.LabelFrame(shell, text="Preferences matrix", padding=10, style="Card.TLabelframe")
+        frame.grid(row=1, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        self.pref_table_border = tk.Frame(frame, bg=self.palette["border"], padx=1, pady=1)
+        self.pref_table_border.grid(row=0, column=0, sticky="nsew")
+
+        pref_container = ttk.Frame(self.pref_table_border, style="TableWrap.TFrame")
         pref_container.pack(fill=tk.BOTH, expand=True)
+        pref_container.columnconfigure(0, weight=1)
+        pref_container.rowconfigure(0, weight=1)
 
         self.pref_tree = ttk.Treeview(
             pref_container,
             columns=("Critère", "Poids", "Q", "P", "V"),
             show="headings"
         )
+        vsb = ttk.Scrollbar(pref_container, orient=tk.VERTICAL, command=self.pref_tree.yview)
+        hsb = ttk.Scrollbar(pref_container, orient=tk.HORIZONTAL, command=self.pref_tree.xview)
+        self.pref_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
         for col in ("Critère", "Poids", "Q", "P", "V"):
             self.pref_tree.column(col, width=120)
 
-
-
-        self.pref_tree.pack(fill=tk.BOTH, expand=True)
+        self.pref_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
 
         self.pref_tree.heading("Critère", text="Critère")
         self.pref_tree.heading("Poids", text="Poids")
@@ -233,13 +305,14 @@ class DecisionMakerWindow:
 
         self.pref_tree.bind("<Double-1>", self.edit_cell)
 
-        buttons_frame = ttk.Frame(self.pref_window)
-        buttons_frame.pack(fill=tk.X, padx=8, pady=5)
+        buttons_frame = ttk.Frame(shell, style="CardInner.TFrame")
+        buttons_frame.grid(row=2, column=0, sticky="ew", pady=(8, 0))
 
         self.ranger_button = ttk.Button(
             buttons_frame,
             text="Ranger",
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Secondary.TButton",
         )
         self.ranger_button.pack(side=tk.LEFT)
 
@@ -261,14 +334,28 @@ class DecisionMakerWindow:
             df = pd.read_excel(path)
 
             for i, item in enumerate(self.pref_tree.get_children()):
+                current_values = list(self.pref_tree.item(item)["values"])
+                if not current_values:
+                    current_values = ["", "", "", "", ""]
+
                 if i < len(df):
                     row = df.iloc[i]
+
+                    criterion_value = row.get("Critère", current_values[0])
+                    if pd.isna(criterion_value) or str(criterion_value).strip() == "":
+                        criterion_value = current_values[0]
+
+                    poids_value = row.get("Poids", "")
+                    q_value = row.get("Q", "")
+                    p_value = row.get("P", "")
+                    v_value = row.get("V", "")
+
                     values = (
-                        row.get("Critère", ""),
-                        row.get("Poids", ""),
-                        row.get("Q", ""),
-                        row.get("P", ""),
-                        row.get("V", "")
+                        criterion_value,
+                        "" if pd.isna(poids_value) else poids_value,
+                        "" if pd.isna(q_value) else q_value,
+                        "" if pd.isna(p_value) else p_value,
+                        "" if pd.isna(v_value) else v_value,
                     )
                     self.pref_tree.item(item, values=values)
 
@@ -312,7 +399,16 @@ class DecisionMakerWindow:
 
         x, y, width, height = self.pref_tree.bbox(item, column)
 
-        entry = tk.Entry(self.pref_tree)
+        entry = tk.Entry(
+            self.pref_tree,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground="#CFD8EA",
+            highlightcolor=self.palette["primary"],
+            bg="#FFFFFF",
+            fg="#0F172A",
+            font=("Segoe UI", 9),
+        )
         entry.place(x=x, y=y, width=width, height=height)
 
         current_value = self.pref_tree.item(item)["values"][col_index]
