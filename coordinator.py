@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 from config import DEFAULT_ALTERNATIVES, DEFAULT_CRITERIA
 from decision_makers import DecisionMakerWindow
 from table_style import apply_excel_style
-
+from promethee import Promethee
 
 class CoordinatorApp:
     def __init__(self):
@@ -52,6 +52,7 @@ class CoordinatorApp:
         self.weight_canvas_window = None
         self.table_border = None
         self.send_button = None
+        self.promethee_result = None
 
         self._build_ui()
         self._apply_mode(self.current_mode)
@@ -487,6 +488,7 @@ class CoordinatorApp:
             self.send_button.configure(state=tk.NORMAL)
 
     def _matrix_from_tree(self):
+        self.matrix = self.matrix.apply(pd.to_numeric, errors="coerce").fillna(0)
         if self.matrix is None:
             return
         cols = list(self.matrix.columns)
@@ -540,23 +542,120 @@ class CoordinatorApp:
         if self.matrix is None or self.matrix.empty:
             messagebox.showwarning("Error", "No matrix loaded.")
             return
+
         if not self._validate_weights_sum_100():
             messagebox.showwarning("Weights", "The total weight must be exactly 100%.")
             return
 
         self._matrix_from_tree()
+        self.matrix = self.matrix.apply(pd.to_numeric, errors="coerce").fillna(0)
+
         self.weights = self._get_weights_from_ui()
+        self.weights = [w / 100 for w in self.weights]
+
         self.sent_matrix = self.matrix.copy(deep=True)
 
-        for name, window in list(self.decision_windows.items()):
-            try:
-                window.receive_matrix(self.sent_matrix)
-                window.update_weight(self._get_weight_for_decision_maker(name))
-                window.apply_mode(self.current_mode)
-            except Exception:
-                pass
+        model = Promethee(self.matrix, self.weights)
+        pref_matrix = model.build_preference_matrix()
+        result = model.compute_flows(pref_matrix)
+        self.promethee_result = result
 
-        messagebox.showinfo("Success", "Matrix ready. Open a decision maker from the list to view the interface.")
+        # Ouvre la fenêtre de résultats PROMETHEE
+        self._show_promethee_results(pref_matrix, result)
+
+    def _show_promethee_results(self, pref_matrix: pd.DataFrame, result: pd.DataFrame):
+        """Affiche la matrice π(a,b) — Phase 1 — et les flux Φ — Phase 2."""
+        win = tk.Toplevel(self.root)
+        win.title("Résultats PROMETHEE")
+        win.configure(bg=self.palette["bg"])
+        win.geometry("1050x650")
+        win.minsize(800, 500)
+        apply_excel_style(self.current_mode)
+
+        shell = ttk.Frame(win, padding=14, style="App.TFrame")
+        shell.pack(fill=tk.BOTH, expand=True)
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(1, weight=1)
+        shell.rowconfigure(3, weight=1)
+
+        # ── PHASE 1 : matrice π(a,b) ─────────────────────────────────────
+        hdr1 = ttk.Frame(shell, style="HeroCompact.TFrame", padding=(10, 6))
+        hdr1.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        ttk.Label(hdr1, text="Phase 1 — Matrice de préférence agrégée π(a,b)",
+                  style="HeroCompactTitle.TLabel").pack(anchor="w")
+        ttk.Label(hdr1,
+                  text="π(a,b) = Σ wj · Pj(a,b)   —   chaque cellule mesure le degré de préférence de a sur b",
+                  style="HeroCompactSubtitle.TLabel").pack(anchor="w", pady=(2, 0))
+
+        border1 = tk.Frame(shell, bg=self.palette["border"], padx=1, pady=1)
+        border1.grid(row=1, column=0, sticky="nsew")
+        c1 = ttk.Frame(border1, style="TableWrap.TFrame")
+        c1.pack(fill=tk.BOTH, expand=True)
+        c1.columnconfigure(0, weight=1)
+        c1.rowconfigure(0, weight=1)
+
+        alternatives = list(pref_matrix.index)
+        cols1 = ["π(a,b)"] + [str(a) for a in alternatives]
+        t1 = ttk.Treeview(c1, columns=cols1, show="headings")
+        vsb1 = ttk.Scrollbar(c1, orient=tk.VERTICAL, command=t1.yview)
+        hsb1 = ttk.Scrollbar(c1, orient=tk.HORIZONTAL, command=t1.xview)
+        t1.configure(yscrollcommand=vsb1.set, xscrollcommand=hsb1.set)
+        t1.grid(row=0, column=0, sticky="nsew")
+        vsb1.grid(row=0, column=1, sticky="ns")
+        hsb1.grid(row=1, column=0, sticky="ew")
+
+        t1.heading("π(a,b)", text="a \\ b")
+        t1.column("π(a,b)", width=110, anchor="w")
+        for a in alternatives:
+            t1.heading(str(a), text=str(a))
+            t1.column(str(a), width=80, anchor="center")
+
+        for a in alternatives:
+            row_vals = [str(a)] + [
+                "—" if a == b else f"{pref_matrix.loc[a, b]:.4f}"
+                for b in alternatives
+            ]
+            t1.insert("", tk.END, values=row_vals)
+
+        # ── PHASE 2 : flux Φ+, Φ-, Φnet ─────────────────────────────────
+        hdr2 = ttk.Frame(shell, style="HeroCompact.TFrame", padding=(10, 6))
+        hdr2.grid(row=2, column=0, sticky="ew", pady=(10, 4))
+        ttk.Label(hdr2, text="Phase 2 — Flux PROMETHEE et classement final",
+                  style="HeroCompactTitle.TLabel").pack(anchor="w")
+        ttk.Label(hdr2,
+                  text="Φ+(a) = flux sortant   |   Φ-(a) = flux entrant   |   Φnet = Φ+ − Φ−  (plus grand = meilleur)",
+                  style="HeroCompactSubtitle.TLabel").pack(anchor="w", pady=(2, 0))
+
+        border2 = tk.Frame(shell, bg=self.palette["border"], padx=1, pady=1)
+        border2.grid(row=3, column=0, sticky="nsew")
+        c2 = ttk.Frame(border2, style="TableWrap.TFrame")
+        c2.pack(fill=tk.BOTH, expand=True)
+        c2.columnconfigure(0, weight=1)
+        c2.rowconfigure(0, weight=1)
+
+        cols2 = ["Rang", "Alternative", "Φ+ (sortant)", "Φ- (entrant)", "Φ net"]
+        t2 = ttk.Treeview(c2, columns=cols2, show="headings")
+        vsb2 = ttk.Scrollbar(c2, orient=tk.VERTICAL, command=t2.yview)
+        t2.configure(yscrollcommand=vsb2.set)
+        t2.grid(row=0, column=0, sticky="nsew")
+        vsb2.grid(row=0, column=1, sticky="ns")
+
+        for col, w in [("Rang", 60), ("Alternative", 140),
+                       ("Φ+ (sortant)", 130), ("Φ- (entrant)", 130), ("Φ net", 120)]:
+            t2.heading(col, text=col)
+            t2.column(col, width=w, anchor="center")
+
+        for rank, alt in enumerate(result.index, start=1):
+            t2.insert("", tk.END, values=(
+                rank,
+                str(alt),
+                f"{result.loc[alt, 'Phi+']:.4f}",
+                f"{result.loc[alt, 'Phi-']:.4f}",
+                f"{result.loc[alt, 'Phi net']:.4f}",
+            ))
+
+        ttk.Button(shell, text="Fermer", command=win.destroy,
+                   style="Secondary.TButton").grid(row=4, column=0, sticky="e", pady=(10, 0))
 
     def _open_decision_makers(self):
         win = tk.Toplevel(self.root)
