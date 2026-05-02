@@ -21,8 +21,8 @@ class CoordinatorApp:
         self.palette = None
         self.root = tk.Tk()
         self.root.title("DSS - Interface Coordinateur")
-        self.root.geometry("1180x700")
-        self.root.minsize(900, 560)
+        self.root.geometry("1180x820")
+        self.root.minsize(900, 700)
 
         self.matrix: Optional[pd.DataFrame] = None
         self.matrix_structure: Optional[pd.DataFrame] = None
@@ -38,7 +38,7 @@ class CoordinatorApp:
         self._building_weights = False
 
         self._weights_pie_colors = ["#054A91", "#3E7CB1", "#81A4CD", "#DBE4EE"]
-        self._weights_pie_diameter = 112
+        self._weights_pie_diameter = 80
         self._weights_pie_padding = 10
         self.weights_pie_canvas = None
         self.mode_button = None
@@ -50,6 +50,9 @@ class CoordinatorApp:
         self.send_button = None
         self.aggregate_button = None
         self.final_results = None
+
+        # ── Nombre de décideurs requis pour le consensus (choisi par le coordinateur)
+        self.consensus_requis_var = tk.IntVar(value=3)
 
         self._build_ui()
         self._apply_mode(self.current_mode)
@@ -86,8 +89,29 @@ class CoordinatorApp:
         content.columnconfigure(1, weight=1)
         content.rowconfigure(0, weight=1)
 
-        left_panel = ttk.Frame(content, style="Card.TFrame", padding=10)
-        left_panel.grid(row=0, column=0, sticky="nsw", padx=(0, 10))
+        # ── Left panel scrollable ────────────────
+        left_outer = ttk.Frame(content, style="Card.TFrame")
+        left_outer.grid(row=0, column=0, sticky="nsw", padx=(0, 10))
+
+        left_canvas = tk.Canvas(left_outer, width=330, highlightthickness=0, bd=0)
+        left_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        left_vsb = ttk.Scrollbar(left_outer, orient=tk.VERTICAL, command=left_canvas.yview)
+        left_vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        left_canvas.configure(yscrollcommand=left_vsb.set)
+
+        left_panel = ttk.Frame(left_canvas, style="Card.TFrame", padding=10)
+        left_win = left_canvas.create_window((0, 0), window=left_panel, anchor="nw")
+
+        def _sync_left(event=None):
+            left_canvas.configure(scrollregion=left_canvas.bbox("all"))
+        def _resize_left(event):
+            left_canvas.itemconfigure(left_win, width=event.width)
+        left_panel.bind("<Configure>", _sync_left)
+        left_canvas.bind("<Configure>", _resize_left)
+
+        def _on_mousewheel(event):
+            left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         right_panel = ttk.Frame(content, style="Card.TFrame", padding=10)
         right_panel.grid(row=0, column=1, sticky="nsew")
@@ -109,7 +133,7 @@ class CoordinatorApp:
         weights_scroll_wrap.columnconfigure(0, weight=1)
         weights_scroll_wrap.rowconfigure(0, weight=1)
 
-        self.weight_canvas = tk.Canvas(weights_scroll_wrap, width=300, height=190, highlightthickness=0, bd=0)
+        self.weight_canvas = tk.Canvas(weights_scroll_wrap, width=300, height=120, highlightthickness=0, bd=0)
         self.weight_canvas.grid(row=0, column=0, sticky="nsew")
         self.weight_scrollbar = ttk.Scrollbar(weights_scroll_wrap, orient=tk.VERTICAL, command=self.weight_canvas.yview)
         self.weight_scrollbar.grid(row=0, column=1, sticky="ns")
@@ -134,7 +158,40 @@ class CoordinatorApp:
         self.legend_frame = ttk.Frame(chart_row, style="ChartCard.TFrame")
         self.legend_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
 
-        # ✅ Panneau statut classements
+        # ── NOUVEAU : seuil d'acceptation du coordinateur ───────────────────
+        consensus_card = ttk.LabelFrame(left_panel, text="Seuil d'acceptation", padding=10, style="Card.TLabelframe")
+        consensus_card.pack(fill=tk.X, pady=(10, 0))
+
+        ttk.Label(
+            consensus_card,
+            text="Nombre minimum de décideurs\ndevant accepter une alternative :",
+            style="WeightHintCompact.TLabel",
+        ).pack(anchor="w", pady=(0, 6))
+
+        consensus_row = ttk.Frame(consensus_card, style="CardInner.TFrame")
+        consensus_row.pack(fill=tk.X)
+
+        tk.Spinbox(
+            consensus_row,
+            from_=1, to=self.num_decision_makers,
+            textvariable=self.consensus_requis_var,
+            width=4,
+            relief="flat",
+            highlightthickness=1,
+            bg="#FFFFFF", fg="#0F172A",
+            buttonbackground="#E8EEFF",
+            highlightbackground="#CFD8EA",
+            font=("Segoe UI", 13, "bold"),
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        ttk.Label(
+            consensus_row,
+            text=f"décideur(s) sur {self.num_decision_makers}",
+            style="WeightNameCompact.TLabel",
+        ).pack(side=tk.LEFT)
+        # ────────────────────────────────────────────────────────────────────
+
+        # ── Panneau statut classements
         status_card = ttk.LabelFrame(left_panel, text="Classements reçus", padding=10, style="Card.TLabelframe")
         status_card.pack(fill=tk.X, pady=(10, 0))
         self.dm_status_labels: Dict[str, tuple] = {}
@@ -736,7 +793,6 @@ class CoordinatorApp:
         ttk.Button(btn_row, text="Exporter Excel", style="Secondary.TButton",
                    command=self._export_final_results).pack(side=tk.LEFT)
 
-        # ✅ Bouton exploitation itérative
         ttk.Button(btn_row, text="Lancer l'exploitation →", style="Accent.TButton",
                    command=lambda: [win.destroy(), self._run_exploitation()]).pack(side=tk.RIGHT)
 
@@ -746,50 +802,61 @@ class CoordinatorApp:
 
     def _run_exploitation(self):
         """
-        Propose chaque alternative du classement agrégé aux 4 décideurs.
-        Un décideur accepte si l'alternative est dans ses 50% premiers (rang <= n//2).
-        Consensus = 3 acceptations sur 4.
-        Max 18 essais (ou nombre d'alternatives si inférieur à 18).
+        Propose chaque alternative du classement agrégé aux décideurs.
+        - Chaque décideur utilise son propre seuil (seuil_pct) défini dans son interface.
+        - Le coordinateur choisit le nombre d'acceptations requises via consensus_requis_var.
+        - Max 18 essais (ou nombre d'alternatives si inférieur à 18).
         """
         if self.final_results is None or self.final_results.empty:
             messagebox.showwarning("Exploitation", "Lancez d'abord l'agrégation.", parent=self.root)
             return
 
-        alternatives = list(self.final_results["Alternative"])  # classement agrégé, meilleur en premier
-        n_alts = len(alternatives)
-        seuil = max(1, n_alts // 2)       # top 50% (ex: 6 alts → seuil = 3)
-        max_essais = min(18, n_alts)       # au plus 18 essais
-        consensus_requis = 3               # 3 acceptations sur 4
+        # Lire le seuil du coordinateur
+        try:
+            consensus_requis = max(1, min(self.num_decision_makers, int(self.consensus_requis_var.get())))
+        except (ValueError, TypeError):
+            consensus_requis = 3
 
-        history = []  # [(alternative, acceptations, refus)]
+        alternatives = list(self.final_results["Alternative"])
+        n_alts = len(alternatives)
+        max_essais = min(18, n_alts)
+
+        history = []  # [(alternative, acceptations, refus, seuils_info)]
 
         for essai, alt_proposee in enumerate(alternatives[:max_essais], start=1):
             acceptations = []
             refus = []
+            seuils_info = {}
 
             for name in self.decision_maker_names[:self.num_decision_makers]:
                 window = self.decision_windows.get(name)
                 if window is None:
                     refus.append(name)
+                    seuils_info[name] = "—"
                     continue
 
                 dm_results = window.get_promethee_results()
                 if dm_results is None:
                     refus.append(name)
+                    seuils_info[name] = "—"
                     continue
 
-                # Position de l'alternative dans le classement individuel du décideur
+                # Seuil individuel du décideur (en %)
+                seuil_pct = window.get_seuil_pct()
+                seuils_info[name] = seuil_pct
+                seuil_rang = max(1, round(n_alts * seuil_pct / 100))
+
                 dm_alts = list(dm_results["Alternative"])
                 if alt_proposee in dm_alts:
-                    rang_dm = dm_alts.index(alt_proposee) + 1  # rang 1-based
-                    if rang_dm <= seuil:
+                    rang_dm = dm_alts.index(alt_proposee) + 1
+                    if rang_dm <= seuil_rang:
                         acceptations.append(name)
                     else:
                         refus.append(name)
                 else:
                     refus.append(name)
 
-            history.append((alt_proposee, list(acceptations), list(refus)))
+            history.append((alt_proposee, list(acceptations), list(refus), seuils_info))
 
             if len(acceptations) >= consensus_requis:
                 self._show_exploitation_result(
@@ -799,13 +866,12 @@ class CoordinatorApp:
                     refus=refus,
                     history=history,
                     success=True,
-                    seuil=seuil,
                     n_alts=n_alts,
                     consensus_requis=consensus_requis,
                 )
                 return
 
-        # Aucun consensus après max_essais
+        # Aucun consensus
         self._show_exploitation_result(
             alternative=None,
             essai=max_essais,
@@ -813,60 +879,60 @@ class CoordinatorApp:
             refus=[],
             history=history,
             success=False,
-            seuil=seuil,
             n_alts=n_alts,
             consensus_requis=consensus_requis,
         )
 
-    # FIX: ajout du paramètre consensus_requis manquant dans la signature
     def _show_exploitation_result(self, alternative, essai, acceptations, refus,
-                                   history, success, seuil, n_alts, consensus_requis=3):
+                                   history, success, n_alts, consensus_requis=3):
         win = tk.Toplevel(self.root)
         win.title("Résultat — Exploitation itérative")
-        win.geometry("700x560")
+        win.geometry("780x580")
         win.configure(bg=self.palette["bg"])
         apply_excel_style(self.current_mode)
 
         frame = ttk.Frame(win, padding=16, style="Dialog.TFrame")
         frame.pack(fill=tk.BOTH, expand=True)
         frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(2, weight=1)
+        frame.rowconfigure(3, weight=1)
 
-        # ── Titre ─────────────────────────────────
-        if success:
-            ttk.Label(frame, text="✅  Consensus atteint !",
-                      style="DialogTitle.TLabel").grid(row=0, column=0, sticky="w")
-        else:
-            ttk.Label(frame, text="❌  Aucun consensus trouvé",
-                      style="DialogTitle.TLabel").grid(row=0, column=0, sticky="w")
+        # ── Titre
+        title_text = "✅  Consensus atteint !" if success else "❌  Aucun consensus trouvé"
+        ttk.Label(frame, text=title_text, style="DialogTitle.TLabel").grid(row=0, column=0, sticky="w")
 
-        # ── Résumé ────────────────────────────────
+        # ── Résumé
         info_frame = ttk.Frame(frame, style="CardInner.TFrame", padding=(0, 8))
         info_frame.grid(row=1, column=0, sticky="ew", pady=(6, 10))
 
         if success:
-            ttk.Label(info_frame,
-                      text=f"Alternative retenue : {alternative}",
+            ttk.Label(info_frame, text=f"Alternative retenue : {alternative}",
                       style="MetricCompact.TLabel").pack(anchor="w")
             ttk.Label(info_frame,
-                      text=f"Trouvée à l'essai n°{essai}   |   "
-                           f"Seuil top 50% : rang ≤ {seuil} sur {n_alts} alternatives",
+                      text=f"Trouvée à l'essai n°{essai}   |   Consensus requis : {consensus_requis} décideur(s) sur {self.num_decision_makers}",
                       style="SectionHintCompact.TLabel").pack(anchor="w", pady=(2, 8))
             ttk.Label(info_frame, text="Accepté par :", style="MutedCapsCompact.TLabel").pack(anchor="w")
             for name in acceptations:
-                ttk.Label(info_frame, text=f"   ✅  {name}", style="WeightHintCompact.TLabel").pack(anchor="w")
+                seuil = self.decision_windows[name].get_seuil_pct() if name in self.decision_windows else "?"
+                ttk.Label(info_frame, text=f"   ✅  {name}  (seuil : top {seuil}%)",
+                          style="WeightHintCompact.TLabel").pack(anchor="w")
             if refus:
                 ttk.Label(info_frame, text="Refusé par :", style="MutedCapsCompact.TLabel").pack(anchor="w", pady=(6, 0))
                 for name in refus:
-                    ttk.Label(info_frame, text=f"   ❌  {name}", style="WeightHintCompact.TLabel").pack(anchor="w")
+                    seuil = self.decision_windows[name].get_seuil_pct() if name in self.decision_windows else "?"
+                    ttk.Label(info_frame, text=f"   ❌  {name}  (seuil : top {seuil}%)",
+                              style="WeightHintCompact.TLabel").pack(anchor="w")
         else:
             ttk.Label(info_frame,
-                      text=f"Après {essai} essais, aucune alternative n'a obtenu "
-                           f"{consensus_requis} acceptations.\n"
-                           f"Seuil top 50% : rang ≤ {seuil} sur {n_alts} alternatives.",
-                      style="SectionHintCompact.TLabel").pack(anchor="w", pady=(0, 8))
+                      text=f"Après {essai} essais, aucune alternative n'a obtenu {consensus_requis} acceptation(s).",
+                      style="SectionHintCompact.TLabel").pack(anchor="w", pady=(0, 4))
+            ttk.Label(info_frame, text="Seuils individuels des décideurs :",
+                      style="MutedCapsCompact.TLabel").pack(anchor="w", pady=(4, 2))
+            for name in self.decision_maker_names[:self.num_decision_makers]:
+                seuil = self.decision_windows[name].get_seuil_pct() if name in self.decision_windows else "?"
+                ttk.Label(info_frame, text=f"   • {name} : top {seuil}%",
+                          style="WeightHintCompact.TLabel").pack(anchor="w")
 
-        # ── Historique des essais ─────────────────
+        # ── Historique
         ttk.Label(frame, text="Détail des essais :",
                   style="MutedCapsCompact.TLabel").grid(row=2, column=0, sticky="nw", pady=(0, 4))
 
@@ -874,20 +940,19 @@ class CoordinatorApp:
         hist_container.grid(row=3, column=0, sticky="nsew")
         hist_container.columnconfigure(0, weight=1)
         hist_container.rowconfigure(0, weight=1)
-        frame.rowconfigure(3, weight=1)
 
         cols = ("Essai", "Alternative proposée", "Accepté par", "Refusé par", "Résultat")
         hist_tree = ttk.Treeview(hist_container, columns=cols, show="headings", height=min(8, len(history)))
-        widths = {"Essai": 45, "Alternative proposée": 170, "Accepté par": 160, "Refusé par": 160, "Résultat": 70}
+        widths = {"Essai": 45, "Alternative proposée": 170, "Accepté par": 170, "Refusé par": 170, "Résultat": 90}
         for col in cols:
             hist_tree.heading(col, text=col)
             hist_tree.column(col, width=widths.get(col, 120))
 
-        for i, (alt, acc, ref) in enumerate(history, start=1):
+        for i, entry in enumerate(history, start=1):
+            alt, acc, ref = entry[0], entry[1], entry[2]
             ok = len(acc) >= consensus_requis
             hist_tree.insert("", tk.END, values=(
-                i,
-                alt,
+                i, alt,
                 ", ".join(acc) if acc else "—",
                 ", ".join(ref) if ref else "—",
                 "✅ Consensus" if ok else "❌ Rejeté",
@@ -898,10 +963,9 @@ class CoordinatorApp:
         hist_tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
 
-        # ── Boutons bas ───────────────────────────
+        # ── Boutons
         btn_row = ttk.Frame(frame, style="Dialog.TFrame")
         btn_row.grid(row=4, column=0, sticky="e", pady=(10, 0))
-
         ttk.Button(btn_row, text="Exporter Excel", style="Accent.TButton",
                    command=lambda: self._export_exploitation(history, success, alternative, consensus_requis)).pack(side=tk.RIGHT)
 
@@ -912,7 +976,9 @@ class CoordinatorApp:
             return
         try:
             rows = []
-            for i, (alt, acc, ref) in enumerate(history, start=1):
+            for i, entry in enumerate(history, start=1):
+                alt, acc, ref = entry[0], entry[1], entry[2]
+                seuils_info = entry[3] if len(entry) > 3 else {}
                 rows.append({
                     "Essai": i,
                     "Alternative proposée": alt,
@@ -920,6 +986,7 @@ class CoordinatorApp:
                     "Refusé par": ", ".join(ref) if ref else "—",
                     "Nb acceptations": len(acc),
                     "Résultat": "Consensus ✅" if len(acc) >= consensus_requis else "Rejeté ❌",
+                    "Seuils décideurs": "; ".join(f"{n}:{v}%" for n, v in seuils_info.items()),
                 })
             df_hist = pd.DataFrame(rows)
             df_summary = pd.DataFrame([{
