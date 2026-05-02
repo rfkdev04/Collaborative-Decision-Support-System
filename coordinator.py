@@ -54,6 +54,10 @@ class CoordinatorApp:
         self._build_ui()
         self._apply_mode(self.current_mode)
 
+    # ─────────────────────────────────────────────
+    #  UI BUILD
+    # ─────────────────────────────────────────────
+
     def _build_ui(self):
         self.palette = apply_excel_style(self.current_mode)
         self.root.configure(bg=self.palette["bg"])
@@ -90,6 +94,7 @@ class CoordinatorApp:
         right_panel.columnconfigure(0, weight=1)
         right_panel.rowconfigure(0, weight=1)
 
+        # ── Left panel ──────────────────────────
         params_frame = ttk.LabelFrame(left_panel, text="Parameters", padding=10, style="Card.TLabelframe")
         params_frame.pack(fill=tk.BOTH, expand=True)
         ttk.Label(params_frame, text="Introduce the weight of decision-makers.", style="SectionHintCompact.TLabel").pack(anchor="w", pady=(0, 8))
@@ -129,6 +134,21 @@ class CoordinatorApp:
         self.legend_frame = ttk.Frame(chart_row, style="ChartCard.TFrame")
         self.legend_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
 
+        # ✅ Panneau statut classements
+        status_card = ttk.LabelFrame(left_panel, text="Classements reçus", padding=10, style="Card.TLabelframe")
+        status_card.pack(fill=tk.X, pady=(10, 0))
+        self.dm_status_labels: Dict[str, tuple] = {}
+        for name in self.decision_maker_names:
+            row = ttk.Frame(status_card, style="CardInner.TFrame")
+            row.pack(fill=tk.X, pady=2)
+            dot = tk.Canvas(row, width=12, height=12, highlightthickness=0, bd=0, bg=self.palette.get("panel_alt", "#f0f0f0"))
+            dot.pack(side=tk.LEFT, padx=(0, 6))
+            dot.create_oval(2, 2, 10, 10, fill="#CBD5E1", outline="", tags="dot")
+            lbl = ttk.Label(row, text=name, style="WeightHintCompact.TLabel")
+            lbl.pack(side=tk.LEFT)
+            self.dm_status_labels[name] = (dot, lbl)
+
+        # ── Right panel ──────────────────────────
         matrix_frame = ttk.LabelFrame(right_panel, text="Performance matrix", padding=10, style="Card.TLabelframe")
         matrix_frame.grid(row=0, column=0, sticky="nsew")
         matrix_frame.columnconfigure(0, weight=1)
@@ -137,6 +157,7 @@ class CoordinatorApp:
         matrix_top = ttk.Frame(matrix_frame, style="CardInner.TFrame")
         matrix_top.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         matrix_top.columnconfigure(0, weight=1)
+
         text_block = ttk.Frame(matrix_top, style="CardInner.TFrame")
         text_block.grid(row=0, column=0, sticky="w")
         ttk.Label(text_block, text="Structured evaluation grid", style="SectionTitleCompact.TLabel").pack(anchor="w")
@@ -167,6 +188,10 @@ class CoordinatorApp:
 
         self._rebuild_weight_fields()
 
+    # ─────────────────────────────────────────────
+    #  SCROLLABLE WEIGHTS
+    # ─────────────────────────────────────────────
+
     def _sync_weight_scrollregion(self, event=None):
         self.weight_canvas.update_idletasks()
         self.weight_canvas.configure(scrollregion=self.weight_canvas.bbox("all"))
@@ -175,6 +200,10 @@ class CoordinatorApp:
         if self.weight_canvas_window is not None:
             self.weight_canvas.itemconfigure(self.weight_canvas_window, width=event.width)
         self._sync_weight_scrollregion()
+
+    # ─────────────────────────────────────────────
+    #  MENUBAR
+    # ─────────────────────────────────────────────
 
     def _build_menubar(self):
         menubar = tk.Menu(self.root)
@@ -186,6 +215,10 @@ class CoordinatorApp:
         file_menu.add_command(label="Save", command=self._file_save)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self._file_exit)
+
+    # ─────────────────────────────────────────────
+    #  MODE
+    # ─────────────────────────────────────────────
 
     def _toggle_mode(self):
         self.current_mode = "light" if self.current_mode == "dark" else "dark"
@@ -210,6 +243,10 @@ class CoordinatorApp:
         self._update_weights_pie_chart()
         self._refresh_legend_colors()
 
+    # ─────────────────────────────────────────────
+    #  WEIGHT FIELDS
+    # ─────────────────────────────────────────────
+
     def _rebuild_weight_fields(self):
         self._building_weights = True
         for w in self.weights_frame.winfo_children():
@@ -229,7 +266,11 @@ class CoordinatorApp:
             dot.create_oval(2, 2, 12, 12, fill=self._weights_pie_colors[i % len(self._weights_pie_colors)], outline="")
             var = tk.StringVar(value="0")
             var.trace_add("write", lambda *_, idx=i, v=var: self._on_weight_edited(idx, v))
-            sb = tk.Spinbox(row, from_=0, to=100, textvariable=var, width=6, relief="flat", highlightthickness=1, bg="#FFFFFF", fg="#0F172A", buttonbackground="#E8EEFF", highlightbackground="#CFD8EA", highlightcolor=self.palette["primary"], font=("Segoe UI", 10, "bold"), command=lambda idx=i, v=var: self._on_weight_edited(idx, v))
+            sb = tk.Spinbox(row, from_=0, to=100, textvariable=var, width=6, relief="flat", highlightthickness=1,
+                            bg="#FFFFFF", fg="#0F172A", buttonbackground="#E8EEFF",
+                            highlightbackground="#CFD8EA", highlightcolor=self.palette["primary"],
+                            font=("Segoe UI", 10, "bold"),
+                            command=lambda idx=i, v=var: self._on_weight_edited(idx, v))
             sb.grid(row=0, column=2, rowspan=2, sticky="e")
             self.weight_vars.append(var)
             self.weight_spinboxes.append(sb)
@@ -281,7 +322,8 @@ class CoordinatorApp:
         canvas.create_oval(x0, y0, x1, y1, fill=self.palette["heading_bg"], outline=self.palette["border"], width=2)
         canvas.create_oval(x0 + 22, y0 + 22, x1 - 22, y1 - 22, fill=self.palette["panel_alt"], outline="")
         if total <= 0.0:
-            canvas.create_text(self._weights_pie_diameter / 2, self._weights_pie_diameter / 2, text="0%", fill=self.palette["text"], font=("Segoe UI", 11, "bold"))
+            canvas.create_text(self._weights_pie_diameter / 2, self._weights_pie_diameter / 2,
+                               text="0%", fill=self.palette["text"], font=("Segoe UI", 11, "bold"))
             return
         start_angle = 90.0
         for i, w in enumerate(self.weights):
@@ -289,11 +331,14 @@ class CoordinatorApp:
                 continue
             extent = -(w / total) * 360.0
             color = self._weights_pie_colors[i % len(self._weights_pie_colors)]
-            canvas.create_arc(x0, y0, x1, y1, start=start_angle, extent=extent, fill=color, outline=self.palette["panel_alt"], width=2)
+            canvas.create_arc(x0, y0, x1, y1, start=start_angle, extent=extent,
+                              fill=color, outline=self.palette["panel_alt"], width=2)
             start_angle += extent
-        canvas.create_text(self._weights_pie_diameter / 2, self._weights_pie_diameter / 2, text=f"{total:.0f}%", fill=self.palette["text"], font=("Segoe UI", 11, "bold"))
+        canvas.create_text(self._weights_pie_diameter / 2, self._weights_pie_diameter / 2,
+                           text=f"{total:.0f}%", fill=self.palette["text"], font=("Segoe UI", 11, "bold"))
 
-    def _parse_weight(self, s: str) -> float:
+    @staticmethod
+    def _parse_weight(s: str) -> float:
         s = (s or "0").strip().replace(",", ".")
         return float(s) if s else 0.0
 
@@ -313,11 +358,18 @@ class CoordinatorApp:
         self.weights = self._get_weights_from_ui()
         total = sum(self.weights)
         if abs(total - 100.0) <= 1e-6:
-            self.weights_status_label.configure(text=f"Total weight : {total:.2f} % (OK)", style="StatusGoodCompact.TLabel")
+            self.weights_status_label.configure(
+                text=f"Total weight : {total:.2f} % (OK)", style="StatusGoodCompact.TLabel")
         else:
-            self.weights_status_label.configure(text=f"Total weight : {total:.2f} % (must be 100%)", style="StatusBadCompact.TLabel")
+            self.weights_status_label.configure(
+                text=f"Total weight : {total:.2f} % (must be 100%)", style="StatusBadCompact.TLabel")
         if self.send_button is not None:
-            self.send_button.configure(state=tk.NORMAL if self.matrix is not None and not self.matrix.empty else tk.DISABLED)
+            self.send_button.configure(
+                state=tk.NORMAL if self.matrix is not None and not self.matrix.empty else tk.DISABLED)
+
+    # ─────────────────────────────────────────────
+    #  FILE MENU
+    # ─────────────────────────────────────────────
 
     def _configure_new_matrix(self):
         dialog = tk.Toplevel(self.root)
@@ -346,10 +398,12 @@ class CoordinatorApp:
             crit_vars.clear()
             n_local = max(1, crit_var.get())
             for i_local in range(n_local):
-                ttk.Label(names_frame, text=f"Critère {i_local + 1} :", style="DialogLabel.TLabel").grid(row=i_local, column=0, sticky="w", padx=(0, 8), pady=2)
+                ttk.Label(names_frame, text=f"Critère {i_local + 1} :", style="DialogLabel.TLabel").grid(
+                    row=i_local, column=0, sticky="w", padx=(0, 8), pady=2)
                 v_local = tk.StringVar(value=f"Critère {i_local + 1}")
                 crit_vars.append(v_local)
-                ttk.Entry(names_frame, textvariable=v_local, width=25, style="Modern.TEntry").grid(row=i_local, column=1, sticky="ew", pady=2)
+                ttk.Entry(names_frame, textvariable=v_local, width=25, style="Modern.TEntry").grid(
+                    row=i_local, column=1, sticky="ew", pady=2)
             names_frame.columnconfigure(1, weight=1)
 
         crit_var.trace_add("write", rebuild_criteria_entries)
@@ -379,7 +433,11 @@ class CoordinatorApp:
         if not config:
             return
         n_alt, n_crit, col_names = config
-        self.matrix = pd.DataFrame([[1.0] * n_crit for _ in range(n_alt)], index=[f"Alternative {i + 1}" for i in range(n_alt)], columns=col_names)
+        self.matrix = pd.DataFrame(
+            [[1.0] * n_crit for _ in range(n_alt)],
+            index=[f"Alternative {i + 1}" for i in range(n_alt)],
+            columns=col_names,
+        )
         self.matrix_structure = self.matrix.copy(deep=True)
         self._refresh_tree()
         self._check_weights_sum()
@@ -400,7 +458,8 @@ class CoordinatorApp:
         if self.matrix is None:
             messagebox.showwarning("Enregistrer", "Aucune matrice chargée.")
             return
-        path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx"), ("Tous les fichiers", "*.*")])
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx"), ("Tous les fichiers", "*.*")])
         if not path:
             return
         try:
@@ -413,6 +472,10 @@ class CoordinatorApp:
     def _file_exit(self):
         self.root.quit()
         self.root.destroy()
+
+    # ─────────────────────────────────────────────
+    #  MATRIX TREE
+    # ─────────────────────────────────────────────
 
     def _refresh_tree(self):
         for item in self.tree.get_children():
@@ -434,8 +497,6 @@ class CoordinatorApp:
             self.tree.insert("", tk.END, values=row, iid=str(idx))
         if self.send_button is not None:
             self.send_button.configure(state=tk.NORMAL)
-        if self.aggregate_button is not None:
-            self.aggregate_button.configure(state=tk.NORMAL)
 
     def _matrix_from_tree(self):
         if self.matrix is None:
@@ -487,6 +548,10 @@ class CoordinatorApp:
         entry.bind("<Return>", commit)
         entry.bind("<FocusOut>", commit)
 
+    # ─────────────────────────────────────────────
+    #  SEND MATRIX
+    # ─────────────────────────────────────────────
+
     def _send_matrix(self):
         if self.matrix is None or self.matrix.empty:
             messagebox.showwarning("Error", "No matrix loaded.")
@@ -506,6 +571,10 @@ class CoordinatorApp:
                 pass
         messagebox.showinfo("Success", "Matrix ready. Open a decision maker from the list to view the interface.")
 
+    # ─────────────────────────────────────────────
+    #  DECISION MAKERS LIST
+    # ─────────────────────────────────────────────
+
     def _open_decision_makers(self):
         win = tk.Toplevel(self.root)
         win.title("Decision makers list")
@@ -515,7 +584,12 @@ class CoordinatorApp:
         frame = ttk.Frame(win, padding=12, style="Dialog.TFrame")
         frame.pack(fill=tk.BOTH, expand=True)
         ttk.Label(frame, text="Decision makers", style="DialogTitle.TLabel").pack(anchor="w", pady=(0, 8))
-        listbox = tk.Listbox(frame, bg="#FFFFFF", fg="#0F172A", selectbackground=self.palette["primary"], selectforeground="#FFFFFF", relief="flat", highlightthickness=1, highlightbackground=self.palette["border_soft"], font=("Segoe UI", 10))
+        listbox = tk.Listbox(
+            frame, bg="#FFFFFF", fg="#0F172A",
+            selectbackground=self.palette["primary"], selectforeground="#FFFFFF",
+            relief="flat", highlightthickness=1,
+            highlightbackground=self.palette["border_soft"], font=("Segoe UI", 10),
+        )
         listbox.pack(fill=tk.BOTH, expand=True)
         for name in self.decision_maker_names[:self.num_decision_makers]:
             listbox.insert(tk.END, name)
@@ -526,7 +600,12 @@ class CoordinatorApp:
                 return
             name = listbox.get(idx[0])
             if name not in self.decision_windows or not self.decision_windows[name].window.winfo_exists():
-                self.decision_windows[name] = DecisionMakerWindow(self.root, name, self._get_weight_for_decision_maker(name), mode=self.current_mode)
+                self.decision_windows[name] = DecisionMakerWindow(
+                    self.root, name,
+                    self._get_weight_for_decision_maker(name),
+                    mode=self.current_mode,
+                    on_result_ready=self._on_decision_maker_result_ready,
+                )
             window = self.decision_windows[name]
             if self.sent_matrix is not None:
                 window.receive_matrix(self.sent_matrix)
@@ -536,7 +615,8 @@ class CoordinatorApp:
             window.window.focus_force()
 
         listbox.bind("<Double-1>", open_selected)
-        ttk.Button(frame, text="Open selected", command=open_selected, style="Accent.TButton").pack(pady=(8, 0), anchor="e")
+        ttk.Button(frame, text="Open selected", command=open_selected,
+                   style="Accent.TButton").pack(pady=(8, 0), anchor="e")
 
     def _get_weight_for_decision_maker(self, name: str) -> float:
         weights = self._get_weights_from_ui()
@@ -545,21 +625,75 @@ class CoordinatorApp:
             return weights[i] if i < len(weights) else 0.0
         return 0.0
 
+    # ─────────────────────────────────────────────
+    #  CALLBACK : décideur a soumis son classement
+    # ─────────────────────────────────────────────
+
+    def _on_decision_maker_result_ready(self, name: str):
+        self._refresh_dm_status_panel()
+
+        ready = self._get_ready_decision_makers()
+        missing = [n for n in self.decision_maker_names[:self.num_decision_makers] if n not in ready]
+        total = self.num_decision_makers
+
+        if len(ready) == total:
+            self.aggregate_button.configure(state=tk.NORMAL)
+            messagebox.showinfo(
+                "Agrégation disponible",
+                f"Les {total} décideurs ont soumis leur classement.\nVous pouvez lancer l'agrégation.",
+                parent=self.root,
+            )
+        else:
+            self.aggregate_button.configure(state=tk.DISABLED)
+            missing_str = "\n• ".join(missing)
+            messagebox.showinfo(
+                "Classement reçu",
+                f"Classement reçu de : {name}\n\nEn attente de :\n• {missing_str}",
+                parent=self.root,
+            )
+
+    def _get_ready_decision_makers(self) -> List[str]:
+        return [
+            n for n in self.decision_maker_names[:self.num_decision_makers]
+            if n in self.decision_windows
+            and self.decision_windows[n].get_promethee_results() is not None
+        ]
+
+    def _refresh_dm_status_panel(self):
+        ready = self._get_ready_decision_makers()
+        for name, (dot, _lbl) in self.dm_status_labels.items():
+            color = "#22C55E" if name in ready else "#CBD5E1"
+            dot.delete("dot")
+            dot.create_oval(2, 2, 10, 10, fill=color, outline="", tags="dot")
+
+    # ─────────────────────────────────────────────
+    #  AGRÉGATION
+    # ─────────────────────────────────────────────
+
     def _aggregate_and_exploit(self):
+        ready = self._get_ready_decision_makers()
+        missing = [n for n in self.decision_maker_names[:self.num_decision_makers] if n not in ready]
+
+        if missing:
+            missing_str = "\n• ".join(missing)
+            messagebox.showerror(
+                "Agrégation impossible",
+                f"Classement manquant pour :\n• {missing_str}\n\n"
+                "Demandez à ces décideurs de lancer leur calcul avant de continuer.",
+                parent=self.root,
+            )
+            return
+
         if not self._validate_weights_sum_100():
             messagebox.showwarning("Agrégation", "Les poids des décideurs doivent totaliser 100%.")
             return
+
         dm_results = []
         for name in self.decision_maker_names[:self.num_decision_makers]:
-            window = self.decision_windows.get(name)
-            if window is None:
-                continue
+            window = self.decision_windows[name]
             result = window.get_promethee_results()
-            if result is not None and not result.empty:
-                dm_results.append((name, self._get_weight_for_decision_maker(name), result))
-        if not dm_results:
-            messagebox.showwarning("Agrégation", "Aucun résultat individuel n'est disponible. Lancez d'abord le calcul chez les décideurs.")
-            return
+            dm_results.append((name, self._get_weight_for_decision_maker(name), result))
+
         try:
             self.final_results = aggregate_decision_maker_results(dm_results)
             self._show_final_results_window()
@@ -569,22 +703,241 @@ class CoordinatorApp:
     def _show_final_results_window(self):
         if self.final_results is None or self.final_results.empty:
             return
+
         win = tk.Toplevel(self.root)
-        win.title("Tableau final — Agrégation et exploitation")
-        win.geometry("700x420")
+        win.title("Tableau final — Agrégation")
+        win.geometry("700x460")
         win.configure(bg=self.palette["bg"])
         apply_excel_style(self.current_mode)
+
         frame = ttk.Frame(win, padding=12, style="Dialog.TFrame")
         frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(frame, text="Tableau final avec ϕ+, ϕ-, ϕ et rang", style="DialogTitle.TLabel").pack(anchor="w", pady=(0, 8))
+
+        ttk.Label(frame, text="Tableau final agrégé — ϕ+, ϕ-, ϕ, Rang",
+                  style="DialogTitle.TLabel").pack(anchor="w", pady=(0, 8))
+
         tree = ttk.Treeview(frame, columns=("Alternative", "ϕ+", "ϕ-", "ϕ", "Rang"), show="headings")
         for c in ("Alternative", "ϕ+", "ϕ-", "ϕ", "Rang"):
             tree.heading(c, text=c)
             tree.column(c, width=120 if c != "Alternative" else 200)
         for _, row in self.final_results.iterrows():
-            tree.insert("", tk.END, values=(row["Alternative"], round(float(row["ϕ+"]), 6), round(float(row["ϕ-"]), 6), round(float(row["ϕ"]), 6), int(row["Rang"])))
+            tree.insert("", tk.END, values=(
+                row["Alternative"],
+                round(float(row["ϕ+"]), 6),
+                round(float(row["ϕ-"]), 6),
+                round(float(row["ϕ"]), 6),
+                int(row["Rang"]),
+            ))
         tree.pack(fill=tk.BOTH, expand=True)
-        ttk.Button(frame, text="Exporter Excel", style="Accent.TButton", command=self._export_final_results).pack(anchor="e", pady=(8, 0))
+
+        btn_row = ttk.Frame(frame, style="Dialog.TFrame")
+        btn_row.pack(fill=tk.X, pady=(10, 0))
+
+        ttk.Button(btn_row, text="Exporter Excel", style="Secondary.TButton",
+                   command=self._export_final_results).pack(side=tk.LEFT)
+
+        # ✅ Bouton exploitation itérative
+        ttk.Button(btn_row, text="Lancer l'exploitation →", style="Accent.TButton",
+                   command=lambda: [win.destroy(), self._run_exploitation()]).pack(side=tk.RIGHT)
+
+    # ─────────────────────────────────────────────
+    #  EXPLOITATION ITÉRATIVE
+    # ─────────────────────────────────────────────
+
+    def _run_exploitation(self):
+        """
+        Propose chaque alternative du classement agrégé aux 4 décideurs.
+        Un décideur accepte si l'alternative est dans ses 50% premiers (rang <= n//2).
+        Consensus = 3 acceptations sur 4.
+        Max 18 essais (ou nombre d'alternatives si inférieur à 18).
+        """
+        if self.final_results is None or self.final_results.empty:
+            messagebox.showwarning("Exploitation", "Lancez d'abord l'agrégation.", parent=self.root)
+            return
+
+        alternatives = list(self.final_results["Alternative"])  # classement agrégé, meilleur en premier
+        n_alts = len(alternatives)
+        seuil = max(1, n_alts // 2)       # top 50% (ex: 6 alts → seuil = 3)
+        max_essais = min(18, n_alts)       # au plus 18 essais
+        consensus_requis = 3               # 3 acceptations sur 4
+
+        history = []  # [(alternative, acceptations, refus)]
+
+        for essai, alt_proposee in enumerate(alternatives[:max_essais], start=1):
+            acceptations = []
+            refus = []
+
+            for name in self.decision_maker_names[:self.num_decision_makers]:
+                window = self.decision_windows.get(name)
+                if window is None:
+                    refus.append(name)
+                    continue
+
+                dm_results = window.get_promethee_results()
+                if dm_results is None:
+                    refus.append(name)
+                    continue
+
+                # Position de l'alternative dans le classement individuel du décideur
+                dm_alts = list(dm_results["Alternative"])
+                if alt_proposee in dm_alts:
+                    rang_dm = dm_alts.index(alt_proposee) + 1  # rang 1-based
+                    if rang_dm <= seuil:
+                        acceptations.append(name)
+                    else:
+                        refus.append(name)
+                else:
+                    refus.append(name)
+
+            history.append((alt_proposee, list(acceptations), list(refus)))
+
+            if len(acceptations) >= consensus_requis:
+                self._show_exploitation_result(
+                    alternative=alt_proposee,
+                    essai=essai,
+                    acceptations=acceptations,
+                    refus=refus,
+                    history=history,
+                    success=True,
+                    seuil=seuil,
+                    n_alts=n_alts,
+                    consensus_requis=consensus_requis,
+                )
+                return
+
+        # Aucun consensus après max_essais
+        self._show_exploitation_result(
+            alternative=None,
+            essai=max_essais,
+            acceptations=[],
+            refus=[],
+            history=history,
+            success=False,
+            seuil=seuil,
+            n_alts=n_alts,
+            consensus_requis=consensus_requis,
+        )
+
+    # FIX: ajout du paramètre consensus_requis manquant dans la signature
+    def _show_exploitation_result(self, alternative, essai, acceptations, refus,
+                                   history, success, seuil, n_alts, consensus_requis=3):
+        win = tk.Toplevel(self.root)
+        win.title("Résultat — Exploitation itérative")
+        win.geometry("700x560")
+        win.configure(bg=self.palette["bg"])
+        apply_excel_style(self.current_mode)
+
+        frame = ttk.Frame(win, padding=16, style="Dialog.TFrame")
+        frame.pack(fill=tk.BOTH, expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(2, weight=1)
+
+        # ── Titre ─────────────────────────────────
+        if success:
+            ttk.Label(frame, text="✅  Consensus atteint !",
+                      style="DialogTitle.TLabel").grid(row=0, column=0, sticky="w")
+        else:
+            ttk.Label(frame, text="❌  Aucun consensus trouvé",
+                      style="DialogTitle.TLabel").grid(row=0, column=0, sticky="w")
+
+        # ── Résumé ────────────────────────────────
+        info_frame = ttk.Frame(frame, style="CardInner.TFrame", padding=(0, 8))
+        info_frame.grid(row=1, column=0, sticky="ew", pady=(6, 10))
+
+        if success:
+            ttk.Label(info_frame,
+                      text=f"Alternative retenue : {alternative}",
+                      style="MetricCompact.TLabel").pack(anchor="w")
+            ttk.Label(info_frame,
+                      text=f"Trouvée à l'essai n°{essai}   |   "
+                           f"Seuil top 50% : rang ≤ {seuil} sur {n_alts} alternatives",
+                      style="SectionHintCompact.TLabel").pack(anchor="w", pady=(2, 8))
+            ttk.Label(info_frame, text="Accepté par :", style="MutedCapsCompact.TLabel").pack(anchor="w")
+            for name in acceptations:
+                ttk.Label(info_frame, text=f"   ✅  {name}", style="WeightHintCompact.TLabel").pack(anchor="w")
+            if refus:
+                ttk.Label(info_frame, text="Refusé par :", style="MutedCapsCompact.TLabel").pack(anchor="w", pady=(6, 0))
+                for name in refus:
+                    ttk.Label(info_frame, text=f"   ❌  {name}", style="WeightHintCompact.TLabel").pack(anchor="w")
+        else:
+            ttk.Label(info_frame,
+                      text=f"Après {essai} essais, aucune alternative n'a obtenu "
+                           f"{consensus_requis} acceptations.\n"
+                           f"Seuil top 50% : rang ≤ {seuil} sur {n_alts} alternatives.",
+                      style="SectionHintCompact.TLabel").pack(anchor="w", pady=(0, 8))
+
+        # ── Historique des essais ─────────────────
+        ttk.Label(frame, text="Détail des essais :",
+                  style="MutedCapsCompact.TLabel").grid(row=2, column=0, sticky="nw", pady=(0, 4))
+
+        hist_container = ttk.Frame(frame, style="CardInner.TFrame")
+        hist_container.grid(row=3, column=0, sticky="nsew")
+        hist_container.columnconfigure(0, weight=1)
+        hist_container.rowconfigure(0, weight=1)
+        frame.rowconfigure(3, weight=1)
+
+        cols = ("Essai", "Alternative proposée", "Accepté par", "Refusé par", "Résultat")
+        hist_tree = ttk.Treeview(hist_container, columns=cols, show="headings", height=min(8, len(history)))
+        widths = {"Essai": 45, "Alternative proposée": 170, "Accepté par": 160, "Refusé par": 160, "Résultat": 70}
+        for col in cols:
+            hist_tree.heading(col, text=col)
+            hist_tree.column(col, width=widths.get(col, 120))
+
+        for i, (alt, acc, ref) in enumerate(history, start=1):
+            ok = len(acc) >= consensus_requis
+            hist_tree.insert("", tk.END, values=(
+                i,
+                alt,
+                ", ".join(acc) if acc else "—",
+                ", ".join(ref) if ref else "—",
+                "✅ Consensus" if ok else "❌ Rejeté",
+            ))
+
+        vsb = ttk.Scrollbar(hist_container, orient=tk.VERTICAL, command=hist_tree.yview)
+        hist_tree.configure(yscrollcommand=vsb.set)
+        hist_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+
+        # ── Boutons bas ───────────────────────────
+        btn_row = ttk.Frame(frame, style="Dialog.TFrame")
+        btn_row.grid(row=4, column=0, sticky="e", pady=(10, 0))
+
+        ttk.Button(btn_row, text="Exporter Excel", style="Accent.TButton",
+                   command=lambda: self._export_exploitation(history, success, alternative, consensus_requis)).pack(side=tk.RIGHT)
+
+    def _export_exploitation(self, history, success, alternative_retenue, consensus_requis=3):
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")], parent=self.root)
+        if not path:
+            return
+        try:
+            rows = []
+            for i, (alt, acc, ref) in enumerate(history, start=1):
+                rows.append({
+                    "Essai": i,
+                    "Alternative proposée": alt,
+                    "Accepté par": ", ".join(acc) if acc else "—",
+                    "Refusé par": ", ".join(ref) if ref else "—",
+                    "Nb acceptations": len(acc),
+                    "Résultat": "Consensus ✅" if len(acc) >= consensus_requis else "Rejeté ❌",
+                })
+            df_hist = pd.DataFrame(rows)
+            df_summary = pd.DataFrame([{
+                "Consensus atteint": "Oui" if success else "Non",
+                "Alternative retenue": alternative_retenue or "—",
+                "Nombre d'essais": len(history),
+                "Acceptations requises": consensus_requis,
+            }])
+            with pd.ExcelWriter(path, engine="openpyxl") as writer:
+                df_hist.to_excel(writer, index=False, sheet_name="Historique essais")
+                df_summary.to_excel(writer, index=False, sheet_name="Résumé")
+            messagebox.showinfo("Export", "Résultats d'exploitation exportés avec succès.")
+        except Exception as exc:
+            messagebox.showerror("Export", str(exc))
+
+    # ─────────────────────────────────────────────
+    #  EXPORT AGRÉGATION
+    # ─────────────────────────────────────────────
 
     def _export_final_results(self):
         if self.final_results is None or self.final_results.empty:
@@ -597,6 +950,10 @@ class CoordinatorApp:
             messagebox.showinfo("Export", "Tableau final exporté avec succès.")
         except Exception as exc:
             messagebox.showerror("Export", str(exc))
+
+    # ─────────────────────────────────────────────
+    #  RUN
+    # ─────────────────────────────────────────────
 
     def run(self):
         self.root.mainloop()

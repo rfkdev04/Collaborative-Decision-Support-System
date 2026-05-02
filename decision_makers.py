@@ -16,11 +16,12 @@ from promethee import compute_promethee_ii, parse_preferences
 class DecisionMakerWindow:
     """Window for one decision maker: matrix display, weight, preferences table."""
 
-    def __init__(self, root, name: str, weight: float = 0.0, mode: str = "dark"):
+    def __init__(self, root, name: str, weight: float = 0.0, mode: str = "dark", on_result_ready=None):
         self.criteria = [
             "Nuisances", "Bruit", "Impacts", "Géotechnique",
             "Equipements", "Accessibilité", "Climat"
         ]
+        self.on_result_ready = on_result_ready
         self.name = name
         self.matrix: Optional[pd.DataFrame] = None
         self.weight = weight
@@ -29,6 +30,9 @@ class DecisionMakerWindow:
         self.preferences_df: Optional[pd.DataFrame] = None
         self.preference_matrix: Optional[pd.DataFrame] = None
         self.promethee_results: Optional[pd.DataFrame] = None
+
+        # ── NOUVEAU : seuil individuel du décideur (% du classement retenu)
+        self.seuil_pct: int = 50  # valeur par défaut 50%
 
         self.window = tk.Toplevel(root)
         self.window.configure(bg=self.palette["bg"])
@@ -288,13 +292,17 @@ class DecisionMakerWindow:
         if hasattr(self, "weight_label"):
             self.weight_label.configure(text=f"Weight : {weight:.1f} %")
 
+    def get_seuil_pct(self) -> int:
+        """Retourne le seuil individuel du décideur (en %)."""
+        return self.seuil_pct
+
     def _add_preferences(self):
         root = self.window.master
         self.pref_window = tk.Toplevel(root)
         self.pref_window.configure(bg=self.palette["bg"])
         self.pref_window.title(f"Preferences - {self.name}")
-        self.pref_window.geometry("980x620")
-        self.pref_window.minsize(760, 500)
+        self.pref_window.geometry("980x660")
+        self.pref_window.minsize(760, 520)
         apply_excel_style(self.current_mode)
 
         menubar = tk.Menu(self.pref_window)
@@ -302,7 +310,6 @@ class DecisionMakerWindow:
 
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-
         file_menu.add_command(label="New", command=self._pref_new)
         file_menu.add_command(label="Open", command=self._pref_open)
         file_menu.add_command(label="Save", command=self._pref_save_file)
@@ -369,8 +376,52 @@ class DecisionMakerWindow:
 
         self.pref_tree.bind("<Double-1>", self.edit_cell)
 
+        # ── NOUVEAU : barre de seuil individuel ──────────────────────────────
+        seuil_bar = ttk.Frame(shell, style="CardInner.TFrame", padding=(0, 6))
+        seuil_bar.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+
+        ttk.Label(
+            seuil_bar,
+            text="Mon seuil d'acceptation :",
+            style="WeightNameCompact.TLabel",
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        ttk.Label(
+            seuil_bar,
+            text="Je retiens le top",
+            style="WeightHintCompact.TLabel",
+        ).pack(side=tk.LEFT)
+
+        self._seuil_var = tk.IntVar(value=self.seuil_pct)
+        seuil_spinbox = tk.Spinbox(
+            seuil_bar,
+            from_=10, to=100, increment=5,
+            textvariable=self._seuil_var,
+            width=5,
+            relief="flat",
+            highlightthickness=1,
+            bg="#FFFFFF", fg="#0F172A",
+            highlightbackground="#CFD8EA",
+            highlightcolor=self.palette["primary"],
+            font=("Segoe UI", 10, "bold"),
+        )
+        seuil_spinbox.pack(side=tk.LEFT, padx=(4, 2))
+
+        ttk.Label(
+            seuil_bar,
+            text="% de mon classement",
+            style="WeightHintCompact.TLabel",
+        ).pack(side=tk.LEFT)
+
+        ttk.Label(
+            seuil_bar,
+            text="  (ex: 50% → j'accepte si l'alternative est dans ma première moitié)",
+            style="SectionHintCompact.TLabel",
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        # ─────────────────────────────────────────────────────────────────────
+
         buttons_frame = ttk.Frame(shell, style="CardInner.TFrame")
-        buttons_frame.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        buttons_frame.grid(row=3, column=0, sticky="ew", pady=(8, 0))
 
         self.ranger_button = ttk.Button(
             buttons_frame,
@@ -511,8 +562,21 @@ class DecisionMakerWindow:
             self._matrix_from_tree_dm()
             self.preferences_df = parse_preferences(self._collect_preferences_df())
             self.preference_matrix, self.promethee_results = compute_promethee_ii(self.matrix, self.preferences_df)
+
+            # ── Sauvegarder le seuil choisi par le décideur
+            if hasattr(self, "_seuil_var"):
+                try:
+                    self.seuil_pct = max(10, min(100, int(self._seuil_var.get())))
+                except (ValueError, TypeError):
+                    self.seuil_pct = 50
+
             messagebox.showinfo("PROMETHEE", "Calcul terminé avec succès.", parent=self.pref_window)
             self._show_results_window()
+
+            # ✅ Notifier le coordinateur
+            if self.on_result_ready:
+                self.on_result_ready(self.name)
+
         except Exception as exc:
             messagebox.showerror("PROMETHEE", str(exc), parent=self.pref_window)
 
@@ -531,6 +595,13 @@ class DecisionMakerWindow:
         frame = ttk.Frame(win, padding=12, style="Dialog.TFrame")
         frame.pack(fill=tk.BOTH, expand=True)
         ttk.Label(frame, text=f"Tableau final — {self.name}", style="DialogTitle.TLabel").pack(anchor="w", pady=(0, 8))
+
+        # Afficher le seuil actif du décideur
+        ttk.Label(
+            frame,
+            text=f"Seuil d'acceptation actif : top {self.seuil_pct}% du classement",
+            style="SectionHintCompact.TLabel",
+        ).pack(anchor="w", pady=(0, 8))
 
         tree = ttk.Treeview(frame, columns=("Alternative", "ϕ+", "ϕ-", "ϕ", "Rang"), show="headings")
         for c in ("Alternative", "ϕ+", "ϕ-", "ϕ", "Rang"):
